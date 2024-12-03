@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 void main() {
   runApp(MyApp());
@@ -9,9 +11,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Modern To-Do App',
+      title: 'To-Do App',
       theme: ThemeData(
-        useMaterial3: true, // Включаем Material 3
+        useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
       ),
       home: TodoScreen(),
@@ -25,59 +27,143 @@ class TodoScreen extends StatefulWidget {
 }
 
 class _TodoScreenState extends State<TodoScreen> {
-  final List<Map<String, dynamic>> _tasks = [];
-  final TextEditingController _taskController = TextEditingController();
+  List<Map<String, dynamic>> _tasks = [];
+  String _filter = 'All'; // Фильтр (барлығы, орындалған, орындалмаған)
 
-  void _addTask(String taskTitle) {
-    if (taskTitle.isNotEmpty) {
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
+  }
+
+  // SharedPreferences арқылы деректерді сақтау
+  Future<void> _saveTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tasks', jsonEncode(_tasks));
+  }
+
+  // SharedPreferences арқылы деректерді жүктеу
+  Future<void> _loadTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? tasksString = prefs.getString('tasks');
+    if (tasksString != null) {
       setState(() {
-        _tasks.add({'title': taskTitle, 'isDone': false});
+        _tasks = List<Map<String, dynamic>>.from(jsonDecode(tasksString));
       });
     }
   }
 
+  // Тапсырма қосу
+  void _addTask(String title, String description, DateTime? dueDate) {
+    setState(() {
+      _tasks.add({
+        'title': title,
+        'description': description,
+        'dueDate': dueDate?.toIso8601String(),
+        'isDone': false,
+      });
+      _saveTasks();
+    });
+  }
+
+  // Тапсырманы өңдеу
+  void _editTask(int index, String title, String description, DateTime? dueDate) {
+    setState(() {
+      _tasks[index]['title'] = title;
+      _tasks[index]['description'] = description;
+      _tasks[index]['dueDate'] = dueDate?.toIso8601String();
+      _saveTasks();
+    });
+  }
+
+  // Тапсырма күйін ауыстыру
   void _toggleTask(int index) {
     setState(() {
       _tasks[index]['isDone'] = !_tasks[index]['isDone'];
+      _saveTasks();
     });
   }
 
+  // Тапсырманы жою
   void _deleteTask(int index) {
     setState(() {
       _tasks.removeAt(index);
+      _saveTasks();
     });
   }
 
-  void _showAddTaskDialog() {
+  // Тапсырма қосу/өңдеу диалогы
+  void _showTaskDialog({int? index}) {
+    final isEditing = index != null;
+    final TextEditingController titleController = TextEditingController(
+      text: isEditing ? _tasks[index]['title'] : '',
+    );
+    final TextEditingController descriptionController = TextEditingController(
+      text: isEditing ? _tasks[index]['description'] : '',
+    );
+    DateTime? dueDate = isEditing && _tasks[index]['dueDate'] != null
+        ? DateTime.parse(_tasks[index]['dueDate'])
+        : null;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Add a new task'),
-          content: TextField(
-            controller: _taskController,
-            decoration: InputDecoration(
-              labelText: 'Task title',
-              border: OutlineInputBorder(),
-            ),
+          title: Text(isEditing ? 'Edit Task' : 'Add Task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: InputDecoration(labelText: 'Task Title'),
+              ),
+              SizedBox(height: 8),
+              TextField(
+                controller: descriptionController,
+                decoration: InputDecoration(labelText: 'Task Description'),
+              ),
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(dueDate == null
+                      ? 'No due date'
+                      : 'Due: ${dueDate?.toLocal().toString().split(' ')[0]}'),
+                  Spacer(),
+                  TextButton(
+                    onPressed: () async {
+                      dueDate = await showDatePicker(
+                        context: context,
+                        initialDate: dueDate ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime(2100),
+                      );
+                      setState(() {});
+                    },
+                    child: Text('Set Due Date'),
+                  ),
+                ],
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context); // Закрыть диалог
+                Navigator.pop(context);
               },
               child: Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
-                _addTask(_taskController.text);
-                _taskController.clear();
-                Navigator.pop(context); // Закрыть диалог
+                if (isEditing) {
+                  _editTask(index!, titleController.text,
+                      descriptionController.text, dueDate);
+                } else {
+                  _addTask(
+                      titleController.text, descriptionController.text, dueDate);
+                }
+                Navigator.pop(context);
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-              ),
-              child: Text('Add'),
+              child: Text(isEditing ? 'Save' : 'Add'),
             ),
           ],
         );
@@ -87,49 +173,85 @@ class _TodoScreenState extends State<TodoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Фильтр қолдану
+    final filteredTasks = _filter == 'All'
+        ? _tasks
+        : _tasks.where((task) {
+      return _filter == 'Completed'
+          ? task['isDone']
+          : !task['isDone'];
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Modern To-Do App'),
+        title: Text('To-Do App'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              setState(() {
+                _filter = value;
+              });
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(value: 'All', child: Text('All Tasks')),
+              PopupMenuItem(value: 'Completed', child: Text('Completed')),
+              PopupMenuItem(value: 'Pending', child: Text('Pending')),
+            ],
+          ),
+        ],
       ),
-      body: _tasks.isEmpty
-          ? Center(
-        child: Text(
-          'No tasks yet! Add one using the + button.',
-          style: TextStyle(fontSize: 16, color: Colors.grey),
-        ),
-      )
+      body: filteredTasks.isEmpty
+          ? Center(child: Text('No tasks found'))
           : ListView.builder(
-        itemCount: _tasks.length,
+        itemCount: filteredTasks.length,
         itemBuilder: (context, index) {
-          return Card(
-            margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-            child: ListTile(
-              leading: Checkbox(
-                value: _tasks[index]['isDone'],
-                onChanged: (value) => _toggleTask(index),
-              ),
-              title: Text(
-                _tasks[index]['title'],
-                style: TextStyle(
-                  decoration: _tasks[index]['isDone']
-                      ? TextDecoration.lineThrough
-                      : TextDecoration.none,
+          final task = filteredTasks[index];
+          return Dismissible(
+            key: UniqueKey(),
+            onDismissed: (_) {
+              _deleteTask(index);
+            },
+            child: Card(
+              margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+              child: ListTile(
+                onLongPress: () => _showTaskDialog(index: index),
+                leading: Checkbox(
+                  value: task['isDone'],
+                  onChanged: (value) {
+                    _toggleTask(index);
+                  },
                 ),
-              ),
-              trailing: IconButton(
-                icon: Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _deleteTask(index),
+                title: Text(
+                  task['title'],
+                  style: TextStyle(
+                    decoration: task['isDone']
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (task['description'] != null &&
+                        task['description'].isNotEmpty)
+                      Text(task['description']),
+                    if (task['dueDate'] != null)
+                      Text('Due: ${DateTime.parse(task['dueDate']).toLocal().toString().split(' ')[0]}'),
+                  ],
+                ),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _deleteTask(index),
+                ),
               ),
             ),
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddTaskDialog,
-        backgroundColor: Colors.blueAccent,
+        onPressed: _showTaskDialog,
         child: Icon(Icons.add),
       ),
     );
   }
 }
-
