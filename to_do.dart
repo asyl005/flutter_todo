@@ -9,7 +9,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'To-Do App',
+      title: 'Modern To-Do App',
+      theme: ThemeData(
+        useMaterial3: true, // Включаем Material 3
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
+      ),
       home: TodoScreen(),
     );
   }
@@ -24,11 +28,10 @@ class _TodoScreenState extends State<TodoScreen> {
   final List<Map<String, dynamic>> _tasks = [];
   final TextEditingController _taskController = TextEditingController();
 
-  void _addTask() {
-    if (_taskController.text.isNotEmpty) {
+  void _addTask(String taskTitle) {
+    if (taskTitle.isNotEmpty) {
       setState(() {
-        _tasks.add({'title': _taskController.text, 'isDone': false});
-        _taskController.clear();
+        _tasks.add({'title': taskTitle, 'isDone': false});
       });
     }
   }
@@ -45,61 +48,86 @@ class _TodoScreenState extends State<TodoScreen> {
     });
   }
 
+  void _showAddTaskDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Add a new task'),
+          content: TextField(
+            controller: _taskController,
+            decoration: InputDecoration(
+              labelText: 'Task title',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context); // Закрыть диалог
+              },
+              child: Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _addTask(_taskController.text);
+                _taskController.clear();
+                Navigator.pop(context); // Закрыть диалог
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+              ),
+              child: Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('To-Do App'),
+        title: Text('Modern To-Do App'),
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _taskController,
-                    decoration: InputDecoration(
-                      labelText: 'Add a task',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+      body: _tasks.isEmpty
+          ? Center(
+        child: Text(
+          'No tasks yet! Add one using the + button.',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+        ),
+      )
+          : ListView.builder(
+        itemCount: _tasks.length,
+        itemBuilder: (context, index) {
+          return Card(
+            margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+            child: ListTile(
+              leading: Checkbox(
+                value: _tasks[index]['isDone'],
+                onChanged: (value) => _toggleTask(index),
+              ),
+              title: Text(
+                _tasks[index]['title'],
+                style: TextStyle(
+                  decoration: _tasks[index]['isDone']
+                      ? TextDecoration.lineThrough
+                      : TextDecoration.none,
                 ),
-                SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _addTask,
-                  child: Text('Add'),
-                ),
-              ],
+              ),
+              trailing: IconButton(
+                icon: Icon(Icons.delete, color: Colors.red),
+                onPressed: () => _deleteTask(index),
+              ),
             ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _tasks.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  leading: Checkbox(
-                    value: _tasks[index]['isDone'],
-                    onChanged: (value) => _toggleTask(index),
-                  ),
-                  title: Text(
-                    _tasks[index]['title'],
-                    style: TextStyle(
-                      decoration: _tasks[index]['isDone']
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                    ),
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(Icons.delete, color: Colors.red),
-                    onPressed: () => _deleteTask(index),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddTaskDialog,
+        backgroundColor: Colors.blueAccent,
+        child: Icon(Icons.add),
       ),
     );
   }
